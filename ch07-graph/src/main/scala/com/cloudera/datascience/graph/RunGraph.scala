@@ -34,41 +34,44 @@ object RunGraph extends Serializable {
     val topicCounts = topics.countByValue()
     val tcSeq = topicCounts.toSeq
     tcSeq.sortBy(_._2).reverse.take(10).foreach(println)
-    val valueDist = topicCounts.groupBy(_._2).mapValues(_.size)
-    valueDist.toSeq.sorted.take(10).foreach(println)
+    val valueDist = topicCounts.groupBy(_._2).mapValues(_.size)     //it's the histogram implementation
+    valueDist.toSeq.sorted.take(10).foreach(println)  
 
-    val topicPairs = medline.flatMap(t => t.sorted.combinations(2))
-    val cooccurs = topicPairs.map(p => (p, 1)).reduceByKey(_+_)
+    val topicPairs = medline.flatMap(t => t.sorted.combinations(2)) //took list of string topics and brought all the combinations of 2
+    //then I take the topicpairs and map the co-occurunce to 1
+    val cooccurs = topicPairs.map(p => (p, 1)).reduceByKey(_+_)     //Reduce the co-occurunce to get the graph edges 
     cooccurs.cache()
     cooccurs.count()
-
+  //ordering is a function in scala that looks for ordering, if you defined the ordering okay otherwise it looks for the best ordering
     cooccurs.top(10)(Ordering.by[(Seq[String], Int), Int](_._2)).foreach(println) 
-
-    val vertices = topics.map(topic => (hashId(topic), topic))
-    val edges = cooccurs.map(p => {
-     val (topics, cnt) = p
+  // I need an ID and topic for each vertix
+    val vertices = topics.map(topic => (hashId(topic), topic))   //hashId is an MD5 hash of the topic name
+    val edges = cooccurs.map(p => {                              
+     val (topics, cnt) = p                                       
      val ids = topics.map(hashId).sorted
-     Edge(ids(0), ids(1), cnt)
+     Edge(ids(0), ids(1), cnt)                                   
     })
     val topicGraph = Graph(vertices, edges)
     topicGraph.cache()
-
-    val connectedComponentGraph = topicGraph.connectedComponents()
-    val componentCounts = sortedConnectedComponents(connectedComponentGraph)
+    
+    val connectedComponentGraph = topicGraph.connectedComponents() //connected components graph is the one that I can reach any component from any component
+    //sorted components counts how much vertices is connected to other ones.
+    val componentCounts = sortedConnectedComponents(connectedComponentGraph) 
     componentCounts.size
-    componentCounts.take(10)foreach(println)
-
+    componentCounts.take(10).foreach(println)
+  //simillar to SQL innerjoin but applied for graphs
     val nameCID = topicGraph.vertices.innerJoin(connectedComponentGraph.vertices) {
-      (topicId, name, componentId) => (name, componentId)
+      (topicId, name, componentId) => (name, componentId) 
     }
     val c1 = nameCID.filter(x => x._2._2 == componentCounts(1)._1)
     c1.collect().foreach(x => println(x._2._1))
-
+  //getting the anomaly of HIV
     val hiv = topics.filter(_.contains("HIV")).countByValue
     hiv.foreach(println)
-
+//getting the degrees of All
     val degrees: VertexRDD[Int] = topicGraph.degrees.cache()
-    degrees.map(_._2).stats()
+    //you can detect topologies from the stats (star, ring..)
+    degrees.map(_._2).stats() //getting mean, max ...
     topNamesAndDegrees(degrees, topicGraph).foreach(println)
 
     val T = medline.count()
